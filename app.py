@@ -219,6 +219,11 @@ with st.sidebar:
 
     run_btn = st.button("🔍 분석 시작", use_container_width=True, type="primary")
 
+    st.divider()
+    st.markdown("#### 🌟 오늘의 추천")
+    scan_btn = st.button("📡 종목 스캔 시작", use_container_width=True)
+    st.caption("주요 미국 주식 30개를 자동 분석해 매수 추천 순위를 보여줍니다")
+
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 st.markdown("# 📊 실시간 주식 분석 대시보드")
@@ -373,3 +378,128 @@ else:
 if auto_refresh:
     time.sleep(refresh_sec)
     st.rerun()
+
+# ── 오늘의 추천 종목 스캔 ────────────────────────────────────────────────────
+WATCHLIST = {
+    "AAPL":  "애플",       "MSFT":  "마이크로소프트", "GOOGL": "구글",
+    "AMZN":  "아마존",     "NVDA":  "엔비디아",       "META":  "메타",
+    "TSLA":  "테슬라",     "AMD":   "AMD",             "AVGO":  "브로드컴",
+    "QCOM":  "퀄컴",       "INTC":  "인텔",            "TSM":   "TSMC",
+    "JPM":   "JP모건",     "BAC":   "뱅크오브아메리카","GS":    "골드만삭스",
+    "V":     "비자",       "MA":    "마스터카드",       "PYPL":  "페이팔",
+    "JNJ":   "존슨앤존슨", "PFE":   "화이자",          "UNH":   "유나이티드헬스",
+    "XOM":   "엑슨모빌",   "CVX":   "셰브론",          "NFLX":  "넷플릭스",
+    "DIS":   "디즈니",     "UBER":  "우버",             "ABNB":  "에어비앤비",
+    "SPY":   "S&P500 ETF", "QQQ":   "나스닥100 ETF",   "ARKK":  "아크이노베이션",
+}
+
+if scan_btn:
+    st.markdown("---")
+    st.markdown("## 🌟 오늘의 매수 추천 종목")
+    st.caption(f"분석 기준: {datetime.now().strftime('%Y-%m-%d %H:%M')} | 기술적 지표 기반")
+
+    results = []
+    prog = st.progress(0, text="종목 스캔 중...")
+
+    for i, (ticker, name) in enumerate(WATCHLIST.items()):
+        prog.progress((i + 1) / len(WATCHLIST), text=f"스캔 중... {ticker} ({i+1}/{len(WATCHLIST)})")
+        try:
+            raw_df = yf.download(ticker, period="3mo", interval="1d",
+                                  progress=False, auto_adjust=True)
+            if raw_df.empty or len(raw_df) < 30:
+                continue
+            df  = enrich(raw_df.copy())
+            sig, score, _ = judge(df)
+            tgt = targets(df)
+            cp   = tgt["현재가"]
+            prev = float(df["Close"].astype(float).iloc[-2])
+            chg_pct = (cp - prev) / prev * 100
+            results.append({
+                "ticker":  ticker,
+                "name":    name,
+                "signal":  sig,
+                "score":   score,
+                "price":   cp,
+                "chg_pct": chg_pct,
+                "buy":     tgt["매수목표"],
+                "sell":    tgt["매도목표"],
+                "stop":    tgt["손절가"],
+            })
+        except:
+            continue
+
+    prog.empty()
+
+    if not results:
+        st.warning("스캔 결과가 없습니다. 잠시 후 다시 시도해주세요.")
+    else:
+        buy_results = [r for r in results if r["signal"] in ("강력매수", "매수")]
+        buy_results.sort(key=lambda x: x["score"], reverse=True)
+        other_results = [r for r in results if r["signal"] not in ("강력매수", "매수")]
+        other_results.sort(key=lambda x: x["score"], reverse=True)
+
+        st.markdown(f"### ✅ 매수 추천 종목 ({len(buy_results)}개)")
+
+        if not buy_results:
+            st.info("현재 매수 신호 종목이 없습니다. 시장 전체가 관망 구간일 수 있어요.")
+        else:
+            for rank, r in enumerate(buy_results, 1):
+                sc = SIG_COLOR.get(r["signal"], "#facc15")
+                chg_color = "#00d26a" if r["chg_pct"] >= 0 else "#ef4444"
+                chg_arrow = "▲" if r["chg_pct"] >= 0 else "▼"
+                st.markdown(f"""
+                <div style="background:#0f172a;border:1px solid #1e293b;
+                            border-left:4px solid {sc};border-radius:12px;
+                            padding:16px 20px;margin-bottom:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                    <div>
+                      <span style="font-size:1.1rem;font-weight:900;color:#e2e8f0">#{rank} {r['ticker']}</span>
+                      <span style="color:#64748b;margin-left:8px">{r['name']}</span>
+                    </div>
+                    <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">현재가</div>
+                        <div style="font-weight:700">${r['price']:,.2f}
+                          <span style="color:{chg_color};font-size:.8rem">{chg_arrow}{abs(r['chg_pct']):.1f}%</span>
+                        </div>
+                      </div>
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">매수목표</div>
+                        <div style="color:#4ade80;font-weight:700">${r['buy']:,.2f}</div>
+                      </div>
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">매도목표</div>
+                        <div style="color:#f87171;font-weight:700">${r['sell']:,.2f}</div>
+                      </div>
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">손절가</div>
+                        <div style="color:#94a3b8;font-weight:700">${r['stop']:,.2f}</div>
+                      </div>
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">신호</div>
+                        <div style="color:{sc};font-weight:900">{SIG_EMOJI[r['signal']]}</div>
+                      </div>
+                      <div style="text-align:center">
+                        <div style="font-size:.7rem;color:#64748b">점수</div>
+                        <div style="color:{sc};font-weight:900;font-size:1.2rem">{r['score']}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+        if other_results:
+            with st.expander(f"📋 나머지 종목 보기 ({len(other_results)}개)"):
+                for r in other_results:
+                    sc = SIG_COLOR.get(r["signal"], "#facc15")
+                    st.markdown(
+                        f"**{r['ticker']}** {r['name']} &nbsp;|&nbsp; "
+                        f"<span style='color:{sc}'>{SIG_EMOJI[r['signal']]}</span> &nbsp;|&nbsp; "
+                        f"점수: {r['score']} &nbsp;|&nbsp; ${r['price']:,.2f}",
+                        unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="color:#334155;font-size:.8rem;margin-top:16px;padding:12px;
+                    background:#0f172a;border-radius:8px">
+        ⚠️ 본 추천은 기술적 지표(이동평균, RSI, MACD, 볼린저밴드)만을 기반으로 한 참고 정보입니다.
+        기업 실적·뉴스·거시경제는 반영되지 않습니다. 투자 결정은 반드시 본인이 판단하세요.
+        </div>""", unsafe_allow_html=True)
