@@ -103,19 +103,27 @@ def judge(df):
 
 
 # ── 목표가 계산 ───────────────────────────────────────────────────────────────
-def targets(df, n=30):
-    w = df.tail(n)
-    sup = float(w["Low"].min())
-    res = float(w["High"].max())
+def targets(df, n=20):
+    w   = df.tail(n)
     cp  = float(df["Close"].iloc[-1])
-    rng = res - sup
+
+    # 현재가 기준 근접 지지선: 최근 n일 저가 중 현재가보다 낮은 것의 최대값
+    recent_lows = w["Low"].astype(float)
+    lows_below  = recent_lows[recent_lows < cp]
+    sup = float(lows_below.max()) if not lows_below.empty else round(cp * 0.97, 2)
+
+    # 현재가 기준 근접 저항선: 최근 n일 고가 중 현재가보다 높은 것의 최소값
+    recent_highs = w["High"].astype(float)
+    highs_above  = recent_highs[recent_highs > cp]
+    res = float(highs_above.min()) if not highs_above.empty else round(cp * 1.05, 2)
+
     return {
         "현재가":   round(cp, 2),
-        "매수목표": round(sup + rng * 0.382, 2),
-        "매도목표": round(sup + rng * 0.618, 2),
+        "매수목표": round(sup, 2),           # 현재가 아래 지지선 = 분할매수 기준
+        "매도목표": round(cp * 1.07, 2),     # 현재가 +7% = 1차 매도 목표
         "지지선":   round(sup, 2),
         "저항선":   round(res, 2),
-        "손절가":   round(sup * 0.97, 2),
+        "손절가":   round(cp * 0.95, 2),     # 현재가 -5% = 손절
     }
 
 
