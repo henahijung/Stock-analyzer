@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Render 포트 설정
+port = int(os.environ.get("PORT", 8501))
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
